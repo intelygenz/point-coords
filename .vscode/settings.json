@@ -1,0 +1,31 @@
+{
+    "files.watcherExclude": {
+        ".venv/**": true,
+        "*/.github/*": true
+    },
+    "python.analysis.indexing": true,
+    "python.languageServer": "Pylance",
+    "editor.defaultFormatter": null,
+    "editor.formatOnSave": true,
+    "editor.rulers": [
+        120
+    ],
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    "isort.args": [
+        "--profile",
+        "black"
+    ],
+    "github.copilot.enable": {
+        "*": true,
+        "yaml": false,
+        "plaintext": false,
+        "markdown": true,
+        "python": true
+    },
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "black-formatter.args": ["--line-length", "120"]
+}

@@ -4,22 +4,20 @@ Convert the info from the annotated points to the format that our pipeline expec
 from pathlib import Path
 import json
 
+
 POINTS_COORDS = {
-    1: (-1,3),
-    6: (-1,1),
-    8: (-2,0),
-    4: (-3,0),
-    7: (0,0),
-    3: (2, 0),
-    9: (-1,-1),
-    2: (-1,-2),
-    5: (-1,-3),
-    10: (0,-1),
-    11: (0,-2),
-    12: (0,1),
-    13: (-2,1),
-    14: (-2,2),
+    i: (-((i -1)%5), (i -1) // 5)
+    for i in range(1,36)
 }
+ORIGIN_AT_POINT = 19
+# Change coordinates to have the origin at ORIGIN_AT_POINT
+POINTS_COORDS = {
+    point_id: (x - POINTS_COORDS[ORIGIN_AT_POINT][0], y - POINTS_COORDS[ORIGIN_AT_POINT][1])
+    for point_id, (x, y) in POINTS_COORDS.items()
+}
+
+
+
 TILE_LEN = 0.598 # In cms
 
 def load_img_points(cam_idx: int, fpath: Path):
@@ -30,6 +28,8 @@ def load_img_points(cam_idx: int, fpath: Path):
                 continue
             line = line.strip()
             line = line.split()
+            if line[0].startswith("#"):
+                continue
             if len(line) != 4:
                 raise Exception(f"Line {line} does not have 4 elements")
             if int(line[0]) != cam_idx:
@@ -40,7 +40,7 @@ def load_img_points(cam_idx: int, fpath: Path):
             points.append((point_id, x, y))
     return points
 
-points2d_fpath = Path("./points2D_NARROW.txt")
+points2d_fpath = Path("./points2D_NARROW_v2.txt")
 out_dir = Path("./chessboard")
 # Check it does not exist
 if out_dir.exists():
@@ -52,8 +52,8 @@ for i in range(8):
     for point in cam_points:
         point_id, x, y = point
         keypoints3d.append([
-            POINTS_COORDS[point_id][0]*TILE_LEN*-1.0, 
-            POINTS_COORDS[point_id][1]*TILE_LEN*-1.0,
+            POINTS_COORDS[point_id][0]*TILE_LEN, 
+            POINTS_COORDS[point_id][1]*TILE_LEN,
             0.0
         ])
         keypoints2d.append([x, y, 1.0])

@@ -13,13 +13,12 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 @dataclass
 class AnnotatedPoint:
-    x: int
-    y: int
+    x: float
+    y: float
     label: str
 
 
 class ImagesToAnnotate:
-    
     def __init__(self, imgs_dir: Path | str, logger: logging.Logger = None, output_fpath: Path | str = None):
         imgs_dir = Path(imgs_dir)
         self.imgs_paths = [p for p in imgs_dir.iterdir() if p.suffix in [".jpg", ".png", ".jpeg"]]
@@ -53,11 +52,11 @@ class ImagesToAnnotate:
             # Check there is no file with the same name
             if out_fpath.exists():
                 raise Exception(f"Output file {out_fpath} already exists")
-            
+
         # Write headers
         with open(out_fpath, "w") as f:
             f.write("cam_idx point_id x y\n")
-        
+
         self.out_fpath = out_fpath
 
     def load_img_from_idx(self, idx: int) -> Image:
@@ -67,7 +66,7 @@ class ImagesToAnnotate:
         img = Image.open(img_path)
         self.last_loaded_idx = idx
         return img
-    
+
     def save_point(self, point: AnnotatedPoint):
         self.annotated_points[self.last_loaded_idx].append(point)
         with open(self.out_fpath, "a") as f:
@@ -78,6 +77,9 @@ class DraggerAndAnnotator:
     def __init__(self, canvas: tk.Canvas, all_imgs: ImagesToAnnotate):
         self.canvas = canvas
         self.drag_start_x, self.drag_start_y = 0, 0
+
+        # accum_x and _y define position in screen coordinates of the top-left corner of the image 
+        # (if negative or higher than the screen resolution, it is out of the screen)
         self.accum_x, self.accum_y = 0, 0
         self.dragging = False
         self.zoom_lvl = 1.0
@@ -102,7 +104,10 @@ class DraggerAndAnnotator:
         canvas.bind("<Button-4>", self.zoom)  # Zoom-in
         canvas.bind("<Button-5>", self.zoom)  # Zoom-out
 
-    def update_img_on_canvas(self):        
+    def update_img_on_canvas(self, is_zooming=False, center_x=0, center_y=0):
+        """
+        center_x, center_y: what point of the canvas should appear at the center of the screen, in canvas coordinates
+        """
         if self.zoom_lvl != 1.0:
             new_size = (int(self.original_image.width * self.zoom_lvl), int(self.original_image.height * self.zoom_lvl))
             pil_img = self.original_image.resize(new_size, Image.LANCZOS)
@@ -111,21 +116,32 @@ class DraggerAndAnnotator:
         tk_image = ImageTk.PhotoImage(pil_img)
         self.canvas.image = tk_image
         self.canvas.create_image(0, 0, image=tk_image, anchor="nw")
+        # Center the image on the canvas
+        if is_zooming:
+            canvas_w = self.canvas.winfo_width()
+            canvas_h = self.canvas.winfo_height()
+            # top_left_x/y times -1 is the position in canvas coordinates of the top-left corner of the screen
+            top_left_x = int(canvas_w / 2 - center_x)
+            top_left_y = int(canvas_h / 2 - center_y)
+            self.canvas.scan_dragto(top_left_x, top_left_y, gain=1)
+            self.accum_x = top_left_x
+            self.accum_y = top_left_y
 
     def load_new_img(self, img_idx: int):
         self.loaded_img_idx = img_idx
         img = self.all_imgs.load_img_from_idx(img_idx)
         self.original_image = img
         self.zoom_lvl = 1.0
+        self.accum_x, self.accum_y = 0, 0
         self.update_img_on_canvas()
 
     def start_drag(self, event):
         self.dragging = True
-        self.drag_start_x = event.x
+        self.drag_start_x = event.x  # event.x and .y are the screen-coordinates of the mouse
         self.drag_start_y = event.y
 
     def stop_drag(self, event):
-        self.accum_x += event.x - self.drag_start_x
+        self.accum_x += event.x - self.drag_start_x 
         self.accum_y += event.y - self.drag_start_y
         print(f"Accumulated X: {-self.accum_x}, Accumulated Y: {-self.accum_y}")
         self.dragging = False
@@ -142,23 +158,19 @@ class DraggerAndAnnotator:
         print the coordinates of the pixel on the screen
         """
         x, y = event.x - self.accum_x, event.y - self.accum_y
-        x_original = int(x / self.zoom_lvl)
-        y_original = int(y / self.zoom_lvl)
-
-
+        x_original, y_original = self._convert_to_original_pixel_coords(x, y)
 
         label = simpledialog.askstring("Input", "Enter point label", parent=self.canvas)
         point = AnnotatedPoint(x_original, y_original, label)
 
         pixels_map = self.original_image.load()
-        for i in range(x_original - 5, x_original + 5):
-            pixels_map[i, y_original] = (255, 0, 0)
-        for j in range(y_original - 5, y_original + 5):
-            pixels_map[x_original, j] = (255, 0, 0)
-
+        for i in range(int(x_original) - 5, int(x_original) + 5):
+            pixels_map[i, int(y_original)] = (255, 0, 0)
+        for j in range(int(y_original) - 5, int(y_original) + 5):
+            pixels_map[int(x_original), j] = (255, 0, 0)
 
         draw = ImageDraw.Draw(self.original_image)
-        draw.text((x_original + 7, y_original - 20), label, fill="red", font=ImageFont.load_default(size=20))
+        draw.text((int(x_original) + 7, int(y_original) - 20), label, fill="red", font=ImageFont.load_default(size=20))
         self.update_img_on_canvas()
 
         self.all_imgs.save_point(point)
@@ -166,25 +178,47 @@ class DraggerAndAnnotator:
         print(f"Clicked pixel coordinates: ({x}, {y})")
         print(f"Original pixel coordinates: ({x_original}, {y_original})")
 
+    def _convert_to_original_pixel_coords(self, pixel_x, pixel_y):
+        """
+        Given the pixel of a resized image, return the pixel in the original image. Returns a float value
+        """
+        return pixel_x / self.zoom_lvl, pixel_y / self.zoom_lvl
+
+    def _convert_to_resized_pixel_coords(self, pixel_x, pixel_y):
+        """
+        Given the pixel of am image in, return the pixel coords in the resized image. Returns a float value
+        """
+        return pixel_x * self.zoom_lvl, pixel_y * self.zoom_lvl
+
     def zoom(self, event):
         """Zoom in or out of the image"""
         # Do not apply many resize operations in a short time
-        if (time.time() - self.last_zoom_ts) > 0.4:
+        if (time.time() - self.last_zoom_ts) > 0.1:
+            # Get the pixel (in original size) that the mouse is pointing to
+            pixel_x = event.x - self.accum_x
+            pixel_y = event.y - self.accum_y
+            pixel_x_original, pixel_y_original = self._convert_to_original_pixel_coords(pixel_x, pixel_y)
+
             if event.num == 5:
-                self.zoom_lvl -= 0.3 if self.zoom_lvl > 0.2 else 0
+                self.zoom_lvl -= 0.5 if self.zoom_lvl > 0.6 else 0
 
             elif event.num == 4:
-                self.zoom_lvl += 0.3 if self.zoom_lvl < 3.0 else 0
+                self.zoom_lvl += 0.5 if self.zoom_lvl < 5.0 else 0
+            
+            print(f"Zoom level: {self.zoom_lvl}")
 
-            print(f"Resizing with zoom level {self.zoom_lvl}")
+            # Get the new canvas coordinates of the pixel the mouse is pointing to
+            pixel_x_new, pixel_y_new = self._convert_to_resized_pixel_coords(pixel_x_original, pixel_y_original)
 
-            self.update_img_on_canvas()
+            self.update_img_on_canvas(is_zooming=True, center_x=pixel_x_new, center_y=pixel_y_new)
+
             self.last_zoom_ts = time.time()
 
     def save_annotated_img(self):
         # Get img_name
         img_name = self.all_imgs.imgs_paths[self.loaded_img_idx].name
         self.original_image.save(self.annotated_imgs_path / img_name)
+
 
 def launch(args):
     logger = logging.getLogger(__name__)
@@ -197,10 +231,11 @@ def launch(args):
 
     imgs = ImagesToAnnotate(args.imgs, logger=logger)
     daa = DraggerAndAnnotator(canvas, all_imgs=imgs)
+
     def show_next_img_on_canvas():
         daa.save_annotated_img()
         daa.load_new_img(daa.loaded_img_idx + 1)
-    
+
     next_button = tk.Button(root, text="Next", command=show_next_img_on_canvas)
     next_button.pack(side="right")
 
@@ -208,7 +243,6 @@ def launch(args):
     root.geometry(f"{daa.original_image.width}x{daa.original_image.height}")
 
     root.mainloop()
-    # imgs.show_next_img_on_canvas()
 
 
 if __name__ == "__main__":

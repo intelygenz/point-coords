@@ -7,9 +7,9 @@ import json
 
 POINTS_COORDS = {
     i: (-((i -1)%5), (i -1) // 5)
-    for i in range(1,36)
+    for i in range(1,31)
 }
-ORIGIN_AT_POINT = 19
+ORIGIN_AT_POINT = 18
 # Change coordinates to have the origin at ORIGIN_AT_POINT
 POINTS_COORDS = {
     point_id: (x - POINTS_COORDS[ORIGIN_AT_POINT][0], y - POINTS_COORDS[ORIGIN_AT_POINT][1])
@@ -40,8 +40,8 @@ def load_img_points(cam_idx: int, fpath: Path):
             points.append((point_id, x, y))
     return points
 
-points2d_fpath = Path("./points2D_NARROW_v2.txt")
-out_dir = Path("./chessboard")
+points2d_fpath = Path("./points2D_wide.txt")
+out_dir = Path("./chessboard_wide")
 # Check it does not exist
 if out_dir.exists():
     raise Exception(f"Output dir {out_dir} already exists")

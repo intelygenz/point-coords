@@ -1,8 +1,4 @@
-/annotated_imgs
-/annotated_imgs_NARROW
-/chessboard
-/chessboard_NARROW
+/output*
 /imgs
-/points2D.txt
-/points2D_NARROW.txt
-/points_sketch.jpeg
+*.txt
+*.pdf

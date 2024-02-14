@@ -1,14 +1,13 @@
-import argparse
 import asyncio
 import logging
-import os
 import time
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import filedialog, simpledialog
+from tkinter import simpledialog
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
+
 
 
 @dataclass
@@ -19,8 +18,8 @@ class AnnotatedPoint:
 
 
 class ImagesToAnnotate:
-    def __init__(self, imgs_dir: Path | str, logger: logging.Logger = None, output_fpath: Path | str = None):
-        imgs_dir = Path(imgs_dir)
+    def __init__(self, imgs_dir: Path, logger: logging.Logger = None, outdir: Path = None):
+        
         self.imgs_paths = [p for p in imgs_dir.iterdir() if p.suffix in [".jpg", ".png", ".jpeg"]]
         # Sort the images by name
         self.imgs_paths.sort(key=lambda p: p.name)
@@ -37,13 +36,12 @@ class ImagesToAnnotate:
         first_img_res = f"W: {first_image.width}, H: {first_image.height}"
         logger.info(f"First image has resolution {first_img_res}")
 
-        self._setup_output_file(output_fpath)
+        self.outdir = outdir
+        self._setup_output_file()
 
-    def _setup_output_file(self, output_file: Path | str):
-        out_fpath = output_file or Path("./points2D.txt")
-        # Check that it is a txt
-        if out_fpath.suffix != ".txt":
-            raise Exception(f"Output file {out_fpath} is not a txt file")
+    def _setup_output_file(self):
+        
+        out_fpath = self.outdir / "points2D.txt"
 
         # Check if the dir exists
         if not out_fpath.parent.exists():
@@ -73,20 +71,36 @@ class ImagesToAnnotate:
             f.write(f"{self.last_loaded_idx + 1} {point.label} {point.x} {point.y}\n")
 
 
+class ImageNavigator:
+    """ 
+    Class to handle image navigation in Tkinter given a set of mouse events. Curre
+    """
+
+    def __init__(self, canvas: tk.Canvas, all_imgs: ImagesToAnnotate):
+        
+        self.canvas = canvas
+        self.all_imgs = all_imgs
+        self.loaded_img_idx = 0
+
+
+
+
+
 class DraggerAndAnnotator:
     def __init__(self, canvas: tk.Canvas, all_imgs: ImagesToAnnotate):
-        self.canvas = canvas
+        
+        self.canvas = canvas        
         self.drag_start_x, self.drag_start_y = 0, 0
-
-        # accum_x and _y define position in screen coordinates of the top-left corner of the image 
-        # (if negative or higher than the screen resolution, it is out of the screen)
+        
+        # accum_x and accum_y keep track (in screen coords) of the top-left corner of the image (if negative or higher than the screen resolution, it is out of the screen)
         self.accum_x, self.accum_y = 0, 0
+
         self.dragging = False
         self.zoom_lvl = 1.0
         self.all_imgs = all_imgs
         self.loaded_img_idx = 0
-        self.annotated_imgs_path = Path("./annotated_imgs")
-        self.annotated_imgs_path.mkdir(parents=True, exist_ok=True)
+        self.annotated_imgs_path = all_imgs.outdir / "annotated_imgs"
+        self.annotated_imgs_path.mkdir(exist_ok=True)
 
         self.last_zoom_ts = time.time()
 
@@ -141,7 +155,7 @@ class DraggerAndAnnotator:
         self.drag_start_y = event.y
 
     def stop_drag(self, event):
-        self.accum_x += event.x - self.drag_start_x 
+        self.accum_x += event.x - self.drag_start_x
         self.accum_y += event.y - self.drag_start_y
         print(f"Accumulated X: {-self.accum_x}, Accumulated Y: {-self.accum_y}")
         self.dragging = False
@@ -204,7 +218,7 @@ class DraggerAndAnnotator:
 
             elif event.num == 4:
                 self.zoom_lvl += 0.5 if self.zoom_lvl < 5.0 else 0
-            
+
             print(f"Zoom level: {self.zoom_lvl}")
 
             # Get the new canvas coordinates of the pixel the mouse is pointing to
@@ -219,35 +233,3 @@ class DraggerAndAnnotator:
         img_name = self.all_imgs.imgs_paths[self.loaded_img_idx].name
         self.original_image.save(self.annotated_imgs_path / img_name)
 
-
-def launch(args):
-    logger = logging.getLogger(__name__)
-
-    # Main window using Tkinter
-    root = tk.Tk()
-    root.title("Points Annotator")
-    canvas = tk.Canvas(root)
-    canvas.pack(fill="both", expand=True)
-
-    imgs = ImagesToAnnotate(args.imgs, logger=logger)
-    daa = DraggerAndAnnotator(canvas, all_imgs=imgs)
-
-    def show_next_img_on_canvas():
-        daa.save_annotated_img()
-        daa.load_new_img(daa.loaded_img_idx + 1)
-
-    next_button = tk.Button(root, text="Next", command=show_next_img_on_canvas)
-    next_button.pack(side="right")
-
-    # Change the root window size to fit the image
-    root.geometry(f"{daa.original_image.width}x{daa.original_image.height}")
-
-    root.mainloop()
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--imgs", help="Directory containing images", type=str, required=False)
-    args = parser.parse_args()
-    launch(args)

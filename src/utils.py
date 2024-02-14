@@ -21,6 +21,7 @@ class ImagesToAnnotate:
     def __init__(self, imgs_dir: Path, logger: logging.Logger = None, outdir: Path = None):
         
         self.imgs_paths = [p for p in imgs_dir.iterdir() if p.suffix in [".jpg", ".png", ".jpeg"]]
+
         # Sort the images by name
         self.imgs_paths.sort(key=lambda p: p.name)
         self.annotated_points = [[] for _ in range(len(self.imgs_paths))]
@@ -53,7 +54,7 @@ class ImagesToAnnotate:
 
         # Write headers
         with open(out_fpath, "w") as f:
-            f.write("cam_idx point_id x y\n")
+            f.write("img_name point_label x y\n")
 
         self.out_fpath = out_fpath
 
@@ -67,26 +68,18 @@ class ImagesToAnnotate:
 
     def save_point(self, point: AnnotatedPoint):
         self.annotated_points[self.last_loaded_idx].append(point)
+        img_name = self.imgs_paths[self.last_loaded_idx].name
         with open(self.out_fpath, "a") as f:
-            f.write(f"{self.last_loaded_idx + 1} {point.label} {point.x} {point.y}\n")
+            f.write(f"{img_name} {point.label} {point.x} {point.y}\n")
 
 
 class ImageNavigator:
     """ 
-    Class to handle image navigation in Tkinter given a set of mouse events. Curre
+    Class to handle image navigation in Tkinter given a set of mouse events. Currently implemented:
+    - Right click and dragging
+    - Zooming in and out with the scroll wheel
     """
 
-    def __init__(self, canvas: tk.Canvas, all_imgs: ImagesToAnnotate):
-        
-        self.canvas = canvas
-        self.all_imgs = all_imgs
-        self.loaded_img_idx = 0
-
-
-
-
-
-class DraggerAndAnnotator:
     def __init__(self, canvas: tk.Canvas, all_imgs: ImagesToAnnotate):
         
         self.canvas = canvas        
@@ -99,8 +92,6 @@ class DraggerAndAnnotator:
         self.zoom_lvl = 1.0
         self.all_imgs = all_imgs
         self.loaded_img_idx = 0
-        self.annotated_imgs_path = all_imgs.outdir / "annotated_imgs"
-        self.annotated_imgs_path.mkdir(exist_ok=True)
 
         self.last_zoom_ts = time.time()
 
@@ -110,9 +101,6 @@ class DraggerAndAnnotator:
         canvas.bind("<ButtonPress-1>", self.start_drag)
         canvas.bind("<ButtonRelease-1>", self.stop_drag)
         canvas.bind("<B1-Motion>", self.execute_drag)
-
-        # Bind the right click to annotate points
-        canvas.bind("<Button-3>", self.annotate_point)
 
         # Bind de scroll wheel to zoom
         canvas.bind("<Button-4>", self.zoom)  # Zoom-in
@@ -166,32 +154,6 @@ class DraggerAndAnnotator:
             delta_y = event.y - self.drag_start_y + self.accum_y
             self.canvas.scan_dragto(delta_x, delta_y, gain=1)
 
-    def annotate_point(self, event):
-        """
-        When a pixel of the image is clicked, draw a red cross on that point, and
-        print the coordinates of the pixel on the screen
-        """
-        x, y = event.x - self.accum_x, event.y - self.accum_y
-        x_original, y_original = self._convert_to_original_pixel_coords(x, y)
-
-        label = simpledialog.askstring("Input", "Enter point label", parent=self.canvas)
-        point = AnnotatedPoint(x_original, y_original, label)
-
-        pixels_map = self.original_image.load()
-        for i in range(int(x_original) - 5, int(x_original) + 5):
-            pixels_map[i, int(y_original)] = (255, 0, 0)
-        for j in range(int(y_original) - 5, int(y_original) + 5):
-            pixels_map[int(x_original), j] = (255, 0, 0)
-
-        draw = ImageDraw.Draw(self.original_image)
-        draw.text((int(x_original) + 7, int(y_original) - 20), label, fill="red", font=ImageFont.load_default(size=20))
-        self.update_img_on_canvas()
-
-        self.all_imgs.save_point(point)
-
-        print(f"Clicked pixel coordinates: ({x}, {y})")
-        print(f"Original pixel coordinates: ({x_original}, {y_original})")
-
     def _convert_to_original_pixel_coords(self, pixel_x, pixel_y):
         """
         Given the pixel of a resized image, return the pixel in the original image. Returns a float value
@@ -227,6 +189,50 @@ class DraggerAndAnnotator:
             self.update_img_on_canvas(is_zooming=True, center_x=pixel_x_new, center_y=pixel_y_new)
 
             self.last_zoom_ts = time.time()
+
+
+class ImageAnnotator(ImageNavigator):
+    def __init__(self, canvas: tk.Canvas, all_imgs: ImagesToAnnotate):
+        super().__init__(canvas, all_imgs)
+        self.annotated_imgs_path = all_imgs.outdir / "annotated_imgs"
+        self.annotated_imgs_path.mkdir(exist_ok=True)
+
+        # Bind the right click to annotate points
+        canvas.bind("<Button-3>", self.annotate_point)
+
+    def annotate_point(self, event):
+        """
+        When a pixel of the image is clicked, draw a red cross on that point, and
+        print the coordinates of the pixel on the screen
+        """
+        x, y = event.x - self.accum_x, event.y - self.accum_y
+        x_original, y_original = self._convert_to_original_pixel_coords(x, y)
+
+        label = simpledialog.askstring("Input", "Enter point label", parent=self.canvas)
+        point = AnnotatedPoint(x_original, y_original, label)
+
+        self.draw_point_on_image(point)
+
+        # Save point coords in txt file
+        self.all_imgs.save_point(point)
+
+        print(f"Clicked pixel coordinates: ({x}, {y})")
+        print(f"Original pixel coordinates: ({x_original}, {y_original})")
+
+    def draw_point_on_image(self, point: AnnotatedPoint):
+        """ 
+        Draws a red cross and the label of the point on the image
+        """        
+        pixels_map = self.original_image.load()
+        for i in range(int(point.x) - 5, int(point.x) + 5):
+            pixels_map[i, int(point.y)] = (255, 0, 0)
+        for j in range(int(point.y) - 5, int(point.y) + 5):
+            pixels_map[int(point.x), j] = (255, 0, 0)
+
+        draw = ImageDraw.Draw(self.original_image)
+        draw.text((int(point.x) + 7, int(point.y) - 20), point.label, fill="red", font=ImageFont.load_default(size=20))
+        self.update_img_on_canvas()
+
 
     def save_annotated_img(self):
         # Get img_name

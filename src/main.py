@@ -3,24 +3,28 @@ import logging
 import tkinter as tk
 from pathlib import Path
 
-from utils import ImagesToAnnotate, DraggerAndAnnotator
+from utils import ImageAnnotator, ImagesToAnnotate
 
 
 def launch(args):
     logger = logging.getLogger(__name__)
 
-    # Main window using Tkinter
     root = tk.Tk()
     root.title("Points Annotator")
     canvas = tk.Canvas(root)
     canvas.pack(fill="both", expand=True)
 
     imgs = ImagesToAnnotate(args.imgs_dir, logger=logger, outdir=args.outdir)
-    daa = DraggerAndAnnotator(canvas, all_imgs=imgs)
+    daa = ImageAnnotator(canvas, all_imgs=imgs)
 
     def show_next_img_on_canvas():
         daa.save_annotated_img()
-        daa.load_new_img(daa.loaded_img_idx + 1)
+        if daa.loaded_img_idx + 1 >= len(daa.all_imgs.imgs_paths):
+            logger.info("No more images to show")
+            # Close the canvas
+            root.quit() 
+        else:
+            daa.load_new_img(daa.loaded_img_idx + 1)
 
     next_button = tk.Button(root, text="Next", command=show_next_img_on_canvas)
     next_button.pack(side="right")

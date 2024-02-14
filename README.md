@@ -1,5 +1,4 @@
-Simple GUI that lets you annotate points in images by labeling and capturing the coordinates of different points on a set 
-of images. 
+Simple GUI that lets you annotate points in images and capture their coordinates. 
 
 A `.txt` file is exported containing each point's label and coordinates. Specifically, it has the following format:
 

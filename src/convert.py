@@ -1,5 +1,6 @@
 """ 
-Convert the info from the annotated points to the format that our pipeline expects
+Auxiliary script to convert the info from the annotated points to the format that our pipeline expects
+to perform the extrinsics calibration
 """
 from pathlib import Path
 import json

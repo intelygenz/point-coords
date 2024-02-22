@@ -117,7 +117,7 @@ class ImageNavigator:
             pil_img = self.original_image
         tk_image = ImageTk.PhotoImage(pil_img)
         self.canvas.image = tk_image
-        self.canvas.create_image(0, 0, image=tk_image, anchor="nw")
+        self.canvas.create_image(0, 0, image=tk_image, anchor="nw")        
         # Center the image on the canvas
         if is_zooming:
             canvas_w = self.canvas.winfo_width()
@@ -135,6 +135,7 @@ class ImageNavigator:
         self.original_image = img
         self.zoom_lvl = 1.0
         self.accum_x, self.accum_y = 0, 0
+        self.canvas.scan_dragto(0, 0, gain=1)
         self.update_img_on_canvas()
 
     def start_drag(self, event):
